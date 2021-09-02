@@ -26,6 +26,7 @@ use crate::dataflow::ResultsCursor;
 use crate::util as mir_util;
 use crate::util::pretty;
 
+use rustc_hash::FxHashMap;
 use crate::borrow_check::{
     borrow_set::BorrowSet,
     constraint_generation,
@@ -273,25 +274,46 @@ pub(in crate::borrow_check) fn compute_regions<'cx, 'tcx>(
     let def_id = body.source.def_id();
 
     // Dump facts if requested.
-    let polonius_output = all_facts.and_then(|all_facts| {
-        if infcx.tcx.sess.opts.debugging_opts.nll_facts {
-            let def_path = infcx.tcx.def_path(def_id);
-            let dir_path = PathBuf::from(&infcx.tcx.sess.opts.debugging_opts.nll_facts_dir)
-                .join(def_path.to_filename_friendly_no_crate());
-            all_facts.write_to_dir(dir_path, location_table).unwrap();
-        }
-
-        if infcx.tcx.sess.opts.debugging_opts.polonius {
-            let algorithm =
-                env::var("POLONIUS_ALGORITHM").unwrap_or_else(|_| String::from("Naive"));
-            let algorithm = Algorithm::from_str(&algorithm).unwrap();
-            debug!("compute_regions: using polonius algorithm {:?}", algorithm);
-            let _prof_timer = infcx.tcx.prof.generic_activity("polonius_analysis");
-            Some(Rc::new(Output::compute(&all_facts, algorithm, false)))
-        } else {
-            None
-        }
-    });
+    let polonius_output = if infcx.tcx.sess.opts.debugging_opts.sbc {
+        debug!("SBC");
+        Some(Rc::new(Output {
+            errors: FxHashMap::default(),
+            subset_errors: FxHashMap::default(),
+            move_errors: FxHashMap::default(),
+            dump_enabled: false,
+            borrow_live_at: FxHashMap::default(),
+            restricts: FxHashMap::default(),
+            restricts_anywhere: FxHashMap::default(),
+            invalidates: FxHashMap::default(),
+            origin_live_on_entry: FxHashMap::default(),
+            subset: FxHashMap::default(),
+            subset_anywhere: FxHashMap::default(),
+            var_live_on_entry: FxHashMap::default(),
+            var_drop_live_on_entry: FxHashMap::default(),
+            path_maybe_initialized_on_exit: FxHashMap::default(),
+            known_contains: FxHashMap::default(),
+            var_maybe_partly_initialized_on_exit: FxHashMap::default(),
+        }))
+    } else {
+        all_facts.as_ref().and_then(|all_facts| {
+            if infcx.tcx.sess.opts.debugging_opts.nll_facts {
+                let def_path = infcx.tcx.def_path(def_id);
+                let dir_path = PathBuf::from(&infcx.tcx.sess.opts.debugging_opts.nll_facts_dir)
+                    .join(def_path.to_filename_friendly_no_crate());
+                all_facts.write_to_dir(dir_path, location_table).unwrap();
+            }
+            if infcx.tcx.sess.opts.debugging_opts.polonius {
+                let algorithm =
+                    env::var("POLONIUS_ALGORITHM").unwrap_or_else(|_| String::from("Hybrid"));
+                let algorithm = Algorithm::from_str(&algorithm).unwrap();
+                debug!("compute_regions: using polonius algorithm {:?}", algorithm);
+                let _prof_timer = infcx.tcx.prof.generic_activity("polonius_analysis");
+                Some(Rc::new(Output::compute(&all_facts, algorithm, false)))
+            } else {
+                None
+            }
+        })
+    };
 
     // Solve the region constraints.
     let (closure_region_requirements, nll_errors) =

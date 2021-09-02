@@ -1246,6 +1246,8 @@ options! {
     save_analysis: bool = (false, parse_bool, [UNTRACKED],
         "write syntax and type analysis (in JSON format) information, in \
         addition to normal output (default: no)"),
+    sbc: bool = (true, parse_bool, [TRACKED],
+        "enable symbolic borrow-checker (default: true)"),
     self_profile: SwitchWithOptPath = (SwitchWithOptPath::Disabled,
         parse_switch_with_opt_path, [UNTRACKED],
         "run the self profiler and output the raw event data"),
